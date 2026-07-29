@@ -1,0 +1,31 @@
+name: Deploy AWS EKS
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - run: aws eks update-kubeconfig --name fiap-fase4-eks --region us-east-1
+
+      - name: Apply manifests (image tag)
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          sed -e "s|:latest|:$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f -
+
+      - run: kubectl -n oficina rollout status deployment/execution-service --timeout=180s
